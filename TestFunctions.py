@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
 import requests
+import json
+import re
 
 # Function to get information
 
 # In this function only is needed the token because into the filter exist a property which set allowed to collect in True,
 # for that reason, next times is not going to be necessary drop the allowed to collect in false. Every response going to collect 100 rows per response.
+
+# Requiere: Key -> Token
+# Returns: Dataframe with information
 
 def getInfo_ATC_True(key):
     api_key = key
@@ -86,7 +91,10 @@ def getInfo_ATC_True(key):
 # In this functions we dont need to create a manual dictionary because we are going to search the cities based on a list of cities or places into that countries
 # for that reason, the function is going to search into list.
 # 
-# Anyways, we can create the dictionary to do it simplier.                
+# Anyways, we can create the dictionary to do it simplier.
+# 
+# Required: Country two letters code -> Example: CO for Colombia, AR for Argentina, IE in this case for Ireland
+# Returns: List of places of specified code country      
 
 def irl_detection(country):
 
@@ -112,6 +120,9 @@ def irl_detection(country):
 
     irl_places_values = irl_cities_recognition(irl_places)
     return irl_places_values
+
+# Required: Country two letters code -> Example: GB for United Kingdom, but this case is special, because we need to add a filter region by England
+# Returns: List of places of specified code country    
 
 def eng_detection(country):
 
@@ -143,16 +154,11 @@ def eng_detection(country):
     eng_places_values = eng_cities_recognition(eng_places)
     return eng_places_values
 
-
-# def detect_country(country, eng_list, irl_list):
-#     clean_country = np.where(country == 'England', 'England', 
-#                     np.where(country == 'Ireland', 'Ireland',
-#                     np.where(country.isin(eng_list), ('England', country),
-#                     np.where(country.isin(irl_list), ('Ireland', country), 'No Information - Empty'))))
-#     return clean_country
-
-
-import numpy as np
+# This function set a condition to create the tuples between Countries and Cities, if there is a country and no city, is going to 
+# set a tuple Country, - but if exist a City is going to set a tuple Country, City, otherwise, No Information - Empty
+#
+# Requierd: Country Column and two list to check into list in order to set the conditions.
+# Returns: List of tuples with Country and City information
 
 def detect_country(country, eng_list, irl_list):
 
@@ -172,10 +178,14 @@ def detect_country(country, eng_list, irl_list):
 
     return results
 
-# Function to found emails
-
+# This function set a condition to create the emails based on content into the symbols <>. 
+# If there is no Email to process, set No email found
+#
+# Requierd: Emails column
+# Returns: List of cleaned emails
+ 
 def raw_emails(emails):
-    import re
+
     clean_emails = []
     for email in emails:
         match = re.search(r'<(.*?)>', str(email))
@@ -186,12 +196,32 @@ def raw_emails(emails):
 
     return clean_emails
 
+# This function set a condition to clean the numbers in order to country and left zeros.
+# If there is no Phone Number to process, set No Phone Number Found
+#
+# Requierd: Phone Column and condition column (in this case the Country Detection column)
+# Returns: List of cleaned numbers
+ 
+
 def clean_numbers(numbers, condition):
 
-    result = np.where(condition == 'England', '(+44) ' + numbers.str.replace('-', '', regex = True), 
-             np.where(condition == 'Ireland', '(+353) ' + numbers.str.replace('-', '', regex = True), 'No Phone Number Found'))
+    only_numbers = numbers.str.replace('-', '', regex=True)
+    cleaned_numbers = only_numbers.str.lstrip('0')
+    
+    result = np.where(condition == 'England', '(+44) ' + cleaned_numbers, 
+             np.where(condition == 'Ireland', '(+353) ' + cleaned_numbers, 'No Phone Number Found'))
     
     return result
+
+# This function set a condition to manage duplicated.
+# In this case, instead of droping duplicates, I'm using a sort values by Technical_test_created_date, grouping by Full Name
+# and put the columns to do the final upload to HubSpot
+# 
+# Its really important setting the first in the values because that is going to keep the most recently creation values 
+# and the last is do the ";".join to the Industries to take all customer industries instead of droping it.
+#
+# Requierd: Dataframe, first condition (Technical_test_created_date) and secord condition (Fullname)
+# Returns: Dataframe without duplicates management.
 
 def duplicates_managment(df, condition, condition2):
 
@@ -216,3 +246,38 @@ def duplicates_managment(df, condition, condition2):
                        'ID': 'Temporary ID'}, inplace=True)
 
     return df
+
+# This function upload the dataframe.
+#
+# Requierd: Dataframe and token
+# Returns: Dataframe charged
+
+def upload_contacts_to_hubspot(df, key):
+
+    url = "https://api.hubapi.com/crm/v3/objects/contacts/batch/create"
+
+    def create_info(contact_data, key):
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, headers=headers, data=json.dumps(contact_data))
+        return response
+
+    for index, row in df.iterrows():
+        contact_data = {
+            "properties": {
+                "hs_object_id": row['Temporary ID'],
+                "raw_email": row['Email'],
+                "phone": row['Phone'],
+                "country": row['Country'],
+                "city": row['City'],
+                "firstname": row['First Name'],
+                "lastname": row['Last Name'],
+                "address": row['Address'],
+                "technical_test___create_date": row['Original Created Date'],
+                "industry": row['Original Industry'],
+            }
+        }
+        
+        create_info(contact_data, key)
