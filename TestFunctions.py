@@ -254,7 +254,7 @@ def duplicates_managment(df, condition, condition2):
 
 def upload_contacts_to_hubspot(df, key):
 
-    url = "https://api.hubapi.com/crm/v3/objects/contacts/batch/create"
+    url = "https://api.hubapi.com/crm/v3/objects/contacts"
 
     def create_info(contact_data, key):
         headers = {
@@ -267,15 +267,15 @@ def upload_contacts_to_hubspot(df, key):
     for index, row in df.iterrows():
         contact_data = {
             "properties": {
-                "hs_object_id": row['Temporary ID'],
-                "raw_email": row['Email'],
+                "temporary_id": row['Temporary ID'],
+                "email": row['Email'],
                 "phone": row['Phone'],
                 "country": row['Country'],
                 "city": row['City'],
                 "firstname": row['First Name'],
                 "lastname": row['Last Name'],
                 "address": row['Address'],
-                "technical_test___create_date": row['Original Created Date'],
+                "original_created_date": row['Original Created Date'],
                 "industry": row['Original Industry'],
             }
         }
